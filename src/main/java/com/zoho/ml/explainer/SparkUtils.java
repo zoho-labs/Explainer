@@ -12,7 +12,7 @@ public final class SparkUtils {
 
   private SparkUtils() {
     if (instance != null) {
-      throw new IllegalStateException("Already initialized."); // No I18N
+      throw new IllegalStateException("Already initialized.");
     }
   }
 

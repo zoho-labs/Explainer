@@ -5,10 +5,11 @@ import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.regex.Pattern;
 
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.function.Function;
@@ -23,12 +24,16 @@ import org.apache.spark.mllib.tree.model.RandomForestModel;
 import org.apache.spark.sql.DataFrame;
 import org.apache.spark.sql.Row;
 
-@SuppressWarnings("serial")
 public class Explainer implements Serializable {
 
-  private ExplainerParameters expParams;
+  private static final long serialVersionUID = 1L;
 
-  public Explainer(ExplainerParameters expParams) {
+  private final ExplainerParameters expParams;
+
+  public Explainer(ExplainerParameters expParams) throws Exception {
+    if (expParams == null) {
+      throw new Exception("ExplainerParameters cannot be null. Specify the necessary parameters.");
+    }
     this.expParams = expParams;
   }
 
@@ -39,25 +44,32 @@ public class Explainer implements Serializable {
             .option("header", String.valueOf(this.expParams.isColumnNameSpecified()))
             .load(this.expParams.getDataPath());
 
-    String impurity = this.expParams.getImpurity();
-    Integer maxDepth = this.expParams.getMaxDepth();
-    Integer maxBins = this.expParams.getMaxBins();
-    Integer numTrees = this.expParams.getNumTrees();
-    Integer seed = this.expParams.getSeed();
-    String featureSubsetStrategy = this.expParams.getFeatureSubsetStrategy();
-    Integer numClasses = this.expParams.getNumClasses();
+    final String impurity = this.expParams.getImpurity();
+    final int maxDepth = this.expParams.getMaxDepth();
+    final int maxBins = this.expParams.getMaxBins();
+    final int numTrees = this.expParams.getNumTrees();
+    final int seed = this.expParams.getSeed();
+    final int numClasses = this.expParams.getNumClasses();
+    final String featureSubsetStrategy = this.expParams.getFeatureSubsetStrategy();
+    final String delimiter = Pattern.quote(this.expParams.getDelimiter());
 
-    HashMap<Integer, Integer> categoricalFeaturesInfo = new HashMap<Integer, Integer>();
+    Map<Integer, Integer> categoricalFeaturesInfo = new HashMap<Integer, Integer>();
 
-    JavaRDD<String> javardd = convertDFtoJavaRDDString(inputData, this.expParams.getDelimiter());
-    JavaRDD<LabeledPoint> data =
-        convertRDDStringToLabeledPoint(javardd, this.expParams.getDelimiter());
+    JavaRDD<String> javardd = inputData.toJavaRDD().map(new Function<Row, String>() {
+      private static final long serialVersionUID = 1L;
+
+      public String call(Row row) {
+        return row.mkString(expParams.getDelimiter());
+      }
+    });
+
+    JavaRDD<LabeledPoint> data = ExplainerUtils.convertRDDStringToLabeledPoint(javardd, delimiter);
 
     final RandomForestModel model =
         RandomForest.trainClassifier(data, numClasses, categoricalFeaturesInfo, numTrees,
             featureSubsetStrategy, impurity, maxDepth, maxBins, seed);
 
-    String splitter[] = stringQuery.split(this.expParams.getDelimiter());
+    String splitter[] = stringQuery.split(delimiter);
     double[] features = new double[splitter.length];
     for (int i = 0; i < splitter.length; i++) {
       splitter[i] = splitter[i].trim();
@@ -70,69 +82,40 @@ public class Explainer implements Serializable {
     Vector featureVector = Vectors.dense(features);
     double labelToBeExplained = model.predict(featureVector);
 
-    ExplainerResults expResult =
-        explainerImpl(this.expParams.getCategoricalColumns(), model, stringQuery,
-            labelToBeExplained, this.expParams, inputData);
+    ExplainerResults expResult = explainerImpl(model, stringQuery, labelToBeExplained, inputData);
     return expResult;
   }
 
-  private JavaRDD<LabeledPoint> convertRDDStringToLabeledPoint(JavaRDD<String> data,
-      final String delimiter) {
-    JavaRDD<LabeledPoint> labeledPointData = data.map(new Function<String, LabeledPoint>() {
-      public LabeledPoint call(String data) throws Exception {
-        String splitter[] = data.split(delimiter);
-        double[] array = new double[splitter.length - 1];
-        for (int i = 0; i < array.length; i++) {
-          try {
-            array[i] = Double.parseDouble(splitter[i + 1]);
-          } catch (Exception e) {
-            throw new Exception(this.getClass() + " Cannot convert \"" + splitter[i + 1]
-                + "\" to double");
-          }
-        }
-        return new LabeledPoint(Double.parseDouble(splitter[0]), Vectors.dense(array));
-      }
-    });
-    return labeledPointData;
-  }
-
-  private JavaRDD<String> convertDFtoJavaRDDString(DataFrame dataFrame, final String delimiter) {
-    JavaRDD<String> data = dataFrame.toJavaRDD().map(new Function<Row, String>() {
-      public String call(Row row) {
-        return row.mkString(delimiter);
-      }
-    });
-    return data;
-  }
-
-  private ExplainerResults explainerImpl(List<Integer> categoricalColumns, RandomForestModel model,
-      String stringQuery, double labelToBeExplained, ExplainerParameters expParams,
-      DataFrame inputData) {
+  private ExplainerResults explainerImpl(RandomForestModel model, String stringQuery,
+      double labelToBeExplained, DataFrame inputData) {
 
     // Input Parameters
-    if (expParams == null) {
-      expParams = new ExplainerParameters();
-    }
-    int numFeatures = expParams.getNumberOfFeatures(); // Number of features needed for explanation
-    int numSamples = expParams.getNumSamples(); // Number of samples
+    // Number of samples
+    final int numSamples = this.expParams.getNumSamples();
     // Number of iterations used in ridge reg when 'discretize = false'
-    int numIterations = expParams.getNumberOfIterations();
+    final int numIterations = this.expParams.getNumberOfIterations();
     // Step size used in ridge reg when 'discretize = false
-    double stepSize = expParams.getStepSize();
-    int[] percentileValues = expParams.getPercentileValues();// Percentiles for discretization
+    final double stepSize = this.expParams.getStepSize();
+    // Percentiles for discretization
+    final int[] percentileValues = this.expParams.getPercentileValues();
+    final String delimiter = Pattern.quote(this.expParams.getDelimiter());
 
     // Removing first column if column name is specified
     String[] actualColNames = inputData.columns();
-    if (expParams.isColumnNameSpecified()) {
+    StringBuilder builder;
+    if (this.expParams.isColumnNameSpecified()) {
       for (int i = 0; i < actualColNames.length; i++) {
-        inputData = inputData.withColumnRenamed(actualColNames[i], "C" + i);
+        builder = new StringBuilder("C").append(i);
+        inputData = inputData.withColumnRenamed(actualColNames[i], builder.toString());
       }
     }
 
     // Categorical columns
+    List<Integer> categoricalColumns = this.expParams.getCategoricalColumns();
     List<Integer> categoricalList = new ArrayList<Integer>();
-    if (!(categoricalColumns == null || categoricalColumns.isEmpty()))
+    if (!(categoricalColumns == null || categoricalColumns.isEmpty())) {
       categoricalList.addAll(categoricalColumns);
+    }
     Collections.sort(categoricalList);
 
     // Removing Label
@@ -143,6 +126,8 @@ public class Explainer implements Serializable {
     int numColumns = columns.length;
     List<List<Double>> featuresList = ExplainerUtils.dataframeToList(featuresDataFrame);
 
+    // Number of features needed for explanation
+    int numFeatures = this.expParams.getNumberOfFeatures();
     if (numFeatures <= 0 || numFeatures > numColumns) {
       numFeatures = numColumns;
     }
@@ -152,12 +137,12 @@ public class Explainer implements Serializable {
     DataFrame dataFrameQuery;
 
     List<Double> queryList = new ArrayList<>();
-    String[] querySplit = stringQuery.split(expParams.getDelimiter());
+    String[] querySplit = stringQuery.split(delimiter);
     for (String s : querySplit) {
       queryList.add(Double.valueOf(s.trim()));
     }
     listQuery = ExplainerUtils.getSubLists(queryList, 1);
-    dataFrameQuery = ExplainerUtils.dataframeFromList(listQuery);
+    dataFrameQuery = ExplainerUtils.dataframeFromList(listQuery, this.expParams.getDelimiter());
 
     // Continuous and categorical split
     DataFrame continuousFeatures = featuresDataFrame;
@@ -176,7 +161,7 @@ public class Explainer implements Serializable {
     List<List<Double>> discretizedContinuous = new ArrayList<>();
     List<List<Double>> listDiscretized, listContinuous, queryDiscretized;
     listContinuous = ExplainerUtils.dataframeToList(continuousFeatures);
-    if (expParams.isDiscretized() && (listContinuous.size() != 0)) {
+    if (this.expParams.isDiscretized() && (listContinuous.size() != 0)) {
       List<List<Double>> listPercentiles =
           ExplainerUtils.calculatePercentiles(listContinuous, percentileValues);
       discretizedContinuous = ExplainerUtils.discretize(listContinuous, listPercentiles);
@@ -237,7 +222,7 @@ public class Explainer implements Serializable {
     List<Double> listStdDev = ExplainerUtils.findStdDev(featuresList);
 
     // Random Sampling for Continuous Columns
-    if (!(expParams.isDiscretized())) {
+    if (!(this.expParams.isDiscretized())) {
       List<List<Double>> continuousSamples = new ArrayList<>();
       for (int i = 0; i < featuresList.size(); i++) {
         continuousSamples.add(ExplainerUtils.randomSamplingFromNormal(listMean.get(i),
@@ -251,10 +236,11 @@ public class Explainer implements Serializable {
 
     // Undiscretize if discretized
     List<List<Double>> undiscretizedSamples;
-    if ((expParams.isDiscretized()) && (listContinuous.size() != 0)) {
+    if ((this.expParams.isDiscretized()) && (listContinuous.size() != 0)) {
       List<List<Double>> sampleLists =
           ExplainerUtils.constructListWithColumnNames(
-              ExplainerUtils.dataframeFromList(listSamples), continuousNames);
+              ExplainerUtils.dataframeFromList(listSamples, this.expParams.getDelimiter()),
+              continuousNames);
       undiscretizedSamples =
           ExplainerUtils.replaceContinuousSamples(listSamples, ExplainerUtils.undiscretize(
               discretizedContinuous, listContinuous, sampleLists, percentileValues),
@@ -269,7 +255,7 @@ public class Explainer implements Serializable {
     }
 
     // Altering means and standard deviations for categorical columns
-    if ((expParams.isDiscretized()) && (listContinuous.size() != 0)) {
+    if ((this.expParams.isDiscretized()) && (listContinuous.size() != 0)) {
       for (int i = 0; i < listMean.size(); i++) {
         listMean.set(i, 0.0);
         listStdDev.set(i, 1.0);
@@ -308,7 +294,8 @@ public class Explainer implements Serializable {
 
     // Euclidean distance calculation
     List<Double> euclideanDistance = new ArrayList<>();
-    DataFrame scaledDataFrame = ExplainerUtils.dataframeFromList(listScaled);
+    DataFrame scaledDataFrame =
+        ExplainerUtils.dataframeFromList(listScaled, this.expParams.getDelimiter());
     Row[] binaryRows = scaledDataFrame.collect();
     double sum;
     for (int i = 0; i < binaryRows.length; i++) {
@@ -338,17 +325,18 @@ public class Explainer implements Serializable {
 
     // Feature Names
     List<String> featureNames = new ArrayList<>();
-    if (expParams.isColumnNameSpecified()) {
+    if (this.expParams.isColumnNameSpecified()) {
       featureNames.addAll(Arrays.asList(actualColNames));
       featureNames.remove(0);
     } else {
       for (int i = 0; i < numColumns; i++) {
-        featureNames.add("F" + (i + 1));
+        builder = new StringBuilder("F").append(i + 1);
+        featureNames.add(builder.toString());
       }
     }
 
     List<String> names = new ArrayList<>();
-    if ((expParams.isDiscretized()) && (listContinuous.size() != 0)) {
+    if ((this.expParams.isDiscretized()) && (listContinuous.size() != 0)) {
       List<List<Double>> listPercentiles =
           ExplainerUtils.calculatePercentiles(listContinuous, percentileValues);
       String name;
@@ -356,12 +344,18 @@ public class Explainer implements Serializable {
         name =
             featureNames
                 .get(Integer.valueOf(continuousNames[i].replaceAll("[^0-9]", "").trim()) - 1);
-        names.add(name + "<=" + listPercentiles.get(i).get(0));
+        builder = new StringBuilder(name).append("<=").append(listPercentiles.get(i).get(0));
+        names.add(builder.toString());
         for (int j = 0; j < (listPercentiles.get(i).size() - 1); j++) {
-          names.add(listPercentiles.get(i).get(j) + "<" + name + "<="
-              + listPercentiles.get(i).get(j + 1));
+          builder =
+              new StringBuilder().append(listPercentiles.get(i).get(j)).append("<").append(name)
+                  .append("<=").append(listPercentiles.get(i).get(j + 1));
+          names.add(builder.toString());
         }
-        names.add(name + ">" + listPercentiles.get(i).get((listPercentiles.get(i).size()) - 1));
+        builder =
+            new StringBuilder(name).append(">").append(
+                listPercentiles.get(i).get((listPercentiles.get(i).size()) - 1));
+        names.add(builder.toString());
       }
     } else {
       for (int i = 0; i < continuousNames.length; i++) {
@@ -384,7 +378,10 @@ public class Explainer implements Serializable {
     for (int i = 0; i < numColumns; i++) {
       if (categoricalList.size() != 0) {
         if (i == (categoricalList.get(y) - 1)) {
-          features.set(i, features.get(i) + "=" + listQuery.get(i).get(0).intValue());
+          builder =
+              new StringBuilder(features.get(i)).append("=").append(
+                  listQuery.get(i).get(0).intValue());
+          features.set(i, builder.toString());
           if (y < (categoricalList.size() - 1)) {
             y++;
           }
@@ -406,7 +403,7 @@ public class Explainer implements Serializable {
             v++;
           }
         } else {
-          if ((expParams.isDiscretized()) && (listContinuous.size() != 0)) {
+          if ((this.expParams.isDiscretized()) && (listContinuous.size() != 0)) {
             transformedFeatureNames.add(listNames.get(u).get(
                 queryDiscretized.get(i).get(0).intValue()));
           } else {
@@ -418,7 +415,7 @@ public class Explainer implements Serializable {
           }
         }
       } else {
-        if (expParams.isDiscretized() && (listContinuous.size() != 0)) {
+        if (this.expParams.isDiscretized() && (listContinuous.size() != 0)) {
           transformedFeatureNames.add(listNames.get(i).get(
               queryDiscretized.get(i).get(0).intValue()));
         } else {
@@ -430,13 +427,14 @@ public class Explainer implements Serializable {
 
     // Class Probabilities
     List<List<Double>> predictProbability = new ArrayList<>();
-    List<String> inverselist = ExplainerUtils.getAppendedList(undiscretizedSamples);
+    List<String> inverselist =
+        ExplainerUtils.getAppendedList(undiscretizedSamples, this.expParams.getDelimiter());
     List<Double> queryProbability = new ArrayList<>();
     List<Double> probabilityValues;
 
-    LinkedHashMap<String, LinkedHashMap<String, String>> probabilityMap =
-        new LinkedHashMap<String, LinkedHashMap<String, String>>();
-    LinkedHashMap<String, String> probMap;
+    Map<String, Map<String, String>> probabilityMap =
+        new LinkedHashMap<String, Map<String, String>>();
+    Map<String, String> probMap;
     DecimalFormat twoDForm = new DecimalFormat("#.######");
     org.apache.spark.mllib.linalg.Vector featureVector;
     DecisionTreeModel[] trees;
@@ -445,7 +443,7 @@ public class Explainer implements Serializable {
     String prediction;
     for (int i = 0; i < inverselist.size(); i++) {
       probMap = new LinkedHashMap<>();
-      splitter = inverselist.get(i).split(",");
+      splitter = inverselist.get(i).split(delimiter);
       featuresArr = new double[splitter.length];
       for (int j = 0; j < splitter.length; j++) {
         featuresArr[j] = Double.parseDouble(splitter[j].trim());
@@ -483,8 +481,11 @@ public class Explainer implements Serializable {
 
     // Weighted data and label
     List<List<Double>> wtdLabels =
-        ExplainerUtils.dataWithSampleWeights(listWeights, predictProbability);
-    List<List<Double>> wtdData = ExplainerUtils.dataWithSampleWeights(listWeights, listBinary);
+        ExplainerUtils.dataWithSampleWeights(listWeights, predictProbability,
+            this.expParams.getDelimiter());
+    List<List<Double>> wtdData =
+        ExplainerUtils
+            .dataWithSampleWeights(listWeights, listBinary, this.expParams.getDelimiter());
     List<String> appendedData = new ArrayList<>();
     List<Double> labelNeeded = new ArrayList<>();
     List<Double> appendedDataPoints;
@@ -525,13 +526,14 @@ public class Explainer implements Serializable {
     final Double[] weights;
     double[] featureWeights;
     Integer[] featureNos;
-    if (expParams.isDiscretized()) {
+    if (this.expParams.isDiscretized()) {
       obj = new RidgeRegressionWithSGD();
     } else {
       obj = new RidgeRegressionWithSGD(stepSize, numIterations, 0.1, 1.0);
     }
     obj.setIntercept(true);
-    ridgemodel = obj.run(ExplainerUtils.listToLabeledpoint(appendedData).rdd());
+    JavaRDD<String> data = SparkUtils.getInstance().getJavaSparkContext().parallelize(appendedData);
+    ridgemodel = obj.run(ExplainerUtils.convertRDDStringToLabeledPoint(data, ",").rdd());
     featureWeights = ridgemodel.weights().toArray();
     weights = new Double[featureWeights.length];
     for (int i = 0; i < featureWeights.length; i++) {
@@ -541,29 +543,28 @@ public class Explainer implements Serializable {
     for (int i = 0; i < featureNos.length; i++) {
       featureNos[i] = i;
     }
-    Arrays.sort(featureNos, new Comparator<Integer>() {
-      public int compare(Integer value1, Integer value2) {
-        return weights[value2].compareTo(weights[value1]);
-      }
-    });
+    Arrays.sort(featureNos, (wts1, wts2) -> weights[wts2].compareTo(weights[wts1]));
 
     // Prediction probabilities
-    LinkedHashMap<String, String> classMap = new LinkedHashMap<String, String>();
+    Map<String, String> classMap = new LinkedHashMap<String, String>();
     for (int i = 0; i < classNames.size(); i++) {
-      classMap.put(classNames.get(i), String.valueOf(queryProbability.get(i)));
+      builder = new StringBuilder("'").append(classNames.get(i)).append("'");
+      classMap.put(builder.toString(), String.valueOf(queryProbability.get(i)));
     }
 
     // Feature probabilities
-    LinkedHashMap<String, String> featureMap = new LinkedHashMap<String, String>();
+    Map<String, String> featureMap = new LinkedHashMap<String, String>();
     for (int i = 0; i < numFeatures; i++) {
-      featureMap.put("'" + transformedFeatureNames.get(featureNos[i]) + "'",
-          String.valueOf(featureWeights[featureNos[i]]));
+      builder =
+          new StringBuilder("'").append(transformedFeatureNames.get(featureNos[i])).append("'");
+      featureMap.put(builder.toString(), String.valueOf(featureWeights[featureNos[i]]));
     }
 
     // Feature values
-    LinkedHashMap<String, String> featureQuery = new LinkedHashMap<String, String>();
+    Map<String, String> featureQuery = new LinkedHashMap<String, String>();
     for (int i = 0; i < numFeatures; i++) {
-      featureQuery.put("'" + features.get(featureNos[i]) + "'", featureValues.get(featureNos[i]));
+      builder = new StringBuilder("'").append(features.get(featureNos[i])).append("'");
+      featureQuery.put(builder.toString(), featureValues.get(featureNos[i]));
     }
 
     ExplainerResults expResult = new ExplainerResults();

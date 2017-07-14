@@ -1,43 +1,43 @@
 package com.zoho.ml.explainer;
 
-import java.util.LinkedHashMap;
+import java.util.Map;
 
 public class ExplainerResults {
 
-  private LinkedHashMap<String, String> predictionProbabilities;
-  private LinkedHashMap<String, String> featureWeights;
-  private LinkedHashMap<String, String> featureValues;
+  private Map<String, String> predictionProbabilities;
+  private Map<String, String> featureWeights;
+  private Map<String, String> featureValues;
 
-  public LinkedHashMap<String, String> getPredictionProbabilities() {
+  public Map<String, String> getPredictionProbabilities() {
     return predictionProbabilities;
   }
 
-  public void setPredictionProbabilities(LinkedHashMap<String, String> predictionProbabilities) {
+  public void setPredictionProbabilities(Map<String, String> predictionProbabilities) {
     this.predictionProbabilities = predictionProbabilities;
   }
 
-  public LinkedHashMap<String, String> getFeatureWeights() {
+  public Map<String, String> getFeatureWeights() {
     return featureWeights;
   }
 
-  public void setFeatureWeights(LinkedHashMap<String, String> featureWeights) {
+  public void setFeatureWeights(Map<String, String> featureWeights) {
     this.featureWeights = featureWeights;
   }
 
-  public LinkedHashMap<String, String> getFeatureValues() {
+  public Map<String, String> getFeatureValues() {
     return featureValues;
   }
 
-  public void setFeatureValues(LinkedHashMap<String, String> featureValues) {
+  public void setFeatureValues(Map<String, String> featureValues) {
     this.featureValues = featureValues;
   }
 
   @Override
   public String toString() {
-    StringBuffer sb =
-        new StringBuffer("PREDICTION PROBABILITIES" + " : " + predictionProbabilities + "\n");
-    sb.append("FEATURE WEIGHTS" + " : " + featureWeights + "\n");
-    sb.append("FEATURE VALUES" + " : " + featureValues);
-    return sb.toString();
+    StringBuilder builder =
+        new StringBuilder("PREDICTION PROBABILITIES" + " : " + predictionProbabilities + "\n");
+    builder.append("FEATURE WEIGHTS" + " : " + featureWeights + "\n");
+    builder.append("FEATURE VALUES" + " : " + featureValues);
+    return builder.toString();
   }
 }

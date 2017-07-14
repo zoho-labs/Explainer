@@ -1,11 +1,12 @@
 package com.zoho.ml.explainer;
 
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Random;
+import java.util.regex.Pattern;
 
 import org.apache.commons.math3.stat.StatUtils;
 import org.apache.commons.math3.stat.descriptive.rank.Percentile;
@@ -50,7 +51,7 @@ public class ExplainerUtils {
 
     List<Double> selection, min, max, val;
     double[] array;
-    Random random;
+    SecureRandom random;
     int s;
 
     List<Double> mean = new ArrayList<>();
@@ -101,7 +102,7 @@ public class ExplainerUtils {
     for (int i = 0; i < sampleList.size(); i++) {
       for (int j = 0; j < sampleList.get(0).size(); j++) {
         s = sampleList.get(i).get(j).intValue();
-        random = new Random();
+        random = new SecureRandom();
         val = new ArrayList<>();
         val.add(minLists.get(i).get(s));
         val.add(Math.round((random.nextGaussian() * stdLists.get(i).get(s))
@@ -115,12 +116,12 @@ public class ExplainerUtils {
   }
 
   public static List<List<Double>> dataWithSampleWeights(List<Double> weights,
-      List<List<Double>> weightLists) {
+      List<List<Double>> weightLists, String delimiter) {
 
     List<Double> weightedRows, wtdDatapoints;
     double weightedDatapoints;
     int i;
-    Row[] rows = dataframeFromList(weightLists).collect();
+    Row[] rows = dataframeFromList(weightLists, delimiter).collect();
 
     List<Double> avgList = new ArrayList<>();
     for (i = 0; i < weightLists.size(); i++) {
@@ -263,7 +264,7 @@ public class ExplainerUtils {
   public static List<Double> randomSamplingFromNormal(double meanValue, double stdValue,
       int numberOfSamples) {
 
-    Random random = new Random();
+    SecureRandom random = new SecureRandom();
     List<Double> randomSamples = new ArrayList<Double>();
     for (int j = 0; j < numberOfSamples; j++) {
       randomSamples.add((random.nextGaussian() * stdValue) + meanValue);
@@ -273,23 +274,23 @@ public class ExplainerUtils {
   }
 
   public static List<Double> weightedSamplingWithReplacement(List<Double> values,
-      List<Double> weights, int numSamples) {
+      List<Double> weights, int numberOfSamples) {
 
     int minIndex, maxIndex, sampleIndex;
     int size = values.size();
     // Calculating the next power of two
     int power = (int) Math.ceil(Math.log((double) size) / Math.log(2));
     int numPartitions = (int) Math.pow(2, power);
-    double minValue, maxValue, remainingCapacity, sample, diff, elementWeight;
+    double minValue, maxValue, remainingCapacity, sample, w, elementWeight;
     double capacity = 1.00 / numPartitions;
     List<Double> partition, samplePartition;
-    Random random;
+    SecureRandom random = new SecureRandom();
 
     List<List<Double>> listPartitions = new ArrayList<>(numPartitions);
     for (int i = 0; i < numPartitions; i++) {
       partition = new ArrayList<Double>();
-      minIndex = minValue(weights);
-      minValue = weights.get(minIndex);
+      minValue = Collections.min(weights);
+      minIndex = weights.indexOf(minValue);
       partition.add((double) minIndex);
       if (minValue >= capacity) {
         weights.set(minIndex, (minValue - capacity));
@@ -297,8 +298,8 @@ public class ExplainerUtils {
         partition.add(1.00);
       } else {
         remainingCapacity = capacity - minValue;
-        maxIndex = maxValue(weights);
-        maxValue = weights.get(maxValue(weights));
+        maxValue = Collections.max(weights);
+        maxIndex = weights.indexOf(maxValue);
         partition.add((double) maxIndex);
         partition.add(minValue / capacity);
         weights.set(minIndex, 0.0);
@@ -308,14 +309,13 @@ public class ExplainerUtils {
     }
 
     List<Double> samples = new ArrayList<>();
-    for (int j = 0; j < numSamples; j++) {
-      random = new Random();
+    for (int i = 0; i < numberOfSamples; i++) {
       sample = random.nextDouble() * numPartitions;
       sampleIndex = (int) sample;
-      diff = sample - sampleIndex;
+      w = sample - sampleIndex;
       samplePartition = listPartitions.get(sampleIndex);
       elementWeight = samplePartition.get(2);
-      if (diff <= elementWeight) {
+      if (w <= elementWeight) {
         samples.add(values.get(samplePartition.get(0).intValue()));
       } else {
         samples.add(values.get(samplePartition.get(1).intValue()));
@@ -325,59 +325,26 @@ public class ExplainerUtils {
 
   }
 
-  private static int maxValue(List<Double> weights) {
+  public static JavaRDD<LabeledPoint> convertRDDStringToLabeledPoint(JavaRDD<String> data,
+      final String delimiter) {
+    JavaRDD<LabeledPoint> labeledPointData = data.map(new Function<String, LabeledPoint>() {
+      private static final long serialVersionUID = 1L;
 
-    double value;
-    double max = -1;
-    int index = 0;
-
-    for (int i = 0; i < weights.size(); i++) {
-      value = weights.get(i);
-      if (max < value) {
-        max = value;
-        index = i;
-      }
-    }
-    return index;
-
-  }
-
-  private static int minValue(List<Double> weights) {
-
-    double value;
-    double max = 2;
-    int index = 0;
-
-    for (int i = 0; i < weights.size(); i++) {
-      value = weights.get(i);
-      if (value != 0) {
-        if (max > value) {
-          max = value;
-          index = i;
-        }
-      }
-    }
-    return index;
-
-  }
-
-  @SuppressWarnings("serial")
-  // No I18N
-  public static JavaRDD<LabeledPoint> listToLabeledpoint(List<String> list) {
-
-    JavaRDD<String> data = SparkUtils.getInstance().getJavaSparkContext().parallelize(list);
-    JavaRDD<LabeledPoint> labeledPoint = data.map(new Function<String, LabeledPoint>() {
-      public LabeledPoint call(String data) {
-        String splitter[] = data.split(",");
+      public LabeledPoint call(String data) throws Exception {
+        String splitter[] = data.split(delimiter);
         double[] array = new double[splitter.length - 1];
         for (int i = 0; i < array.length; i++) {
-          array[i] = Double.parseDouble(splitter[i + 1]);
+          try {
+            array[i] = Double.parseDouble(splitter[i + 1]);
+          } catch (Exception e) {
+            throw new Exception(this.getClass() + " Cannot convert \"" + splitter[i + 1]
+                + "\" to double");
+          }
         }
         return new LabeledPoint(Double.parseDouble(splitter[0]), Vectors.dense(array));
       }
     });
-    return labeledPoint;
-
+    return labeledPointData;
   }
 
   public static List<List<Double>> constructListWithColumnNames(DataFrame dataframe,
@@ -399,40 +366,45 @@ public class ExplainerUtils {
 
   }
 
-  public static List<String> getAppendedList(List<List<Double>> list) {
+  public static List<String> getAppendedList(List<List<Double>> list, String delimiter) {
 
+    StringBuilder builder;
     String str;
 
     List<String> appendedList = new ArrayList<String>();
     for (int i = 0; i < list.get(0).size(); i++) {
+      builder = new StringBuilder();
       str = "";
       for (int j = 0; j < list.size(); j++) {
-        str += list.get(j).get(i) + ",";// No I18N
+        builder.append(list.get(j).get(i)).append(delimiter);
       }
-      appendedList.add(str.substring(0, str.lastIndexOf(",")));// No I18N
+      str = builder.toString();
+      appendedList.add(str.substring(0, str.lastIndexOf(delimiter)));
     }
     return appendedList;
 
   }
 
-  @SuppressWarnings("serial")
-  // No I18N
-  public static DataFrame dataframeFromList(List<List<Double>> list) {
+  public static DataFrame dataframeFromList(List<List<Double>> list, String delimiter) {
 
     JavaRDD<String> data =
         SparkUtils.getInstance().getJavaSparkContext()
-            .parallelize(ExplainerUtils.getAppendedList(list));
+            .parallelize(ExplainerUtils.getAppendedList(list, delimiter));
     JavaRDD<Row> rawData = data.map(new Function<String, Row>() {
+      private static final long serialVersionUID = 1L;
+
       public Row call(String data) {
         Row newRow = RowFactory.create(data);
-        Object[] colArray = (String[]) newRow.getString(0).split(",");
+        Object[] colArray = (String[]) newRow.getString(0).split(Pattern.quote(delimiter));
         return RowFactory.create(colArray);
       }
     });
     StructField[] structField = new StructField[rawData.first().size()];
+    StringBuilder builder;
     for (int i = 0; i < structField.length; i++) {
+      builder = new StringBuilder("C").append(i + 1);
       structField[i] =
-          new StructField("C" + (i + 1), DataTypes.StringType, false, Metadata.empty());
+          new StructField(builder.toString(), DataTypes.StringType, false, Metadata.empty());
     }
     StructType schema = new StructType(structField);
     return (SparkUtils.getInstance().getSQLContext().createDataFrame(rawData, schema));

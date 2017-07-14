@@ -4,9 +4,9 @@ import java.io.Serializable;
 import java.util.Arrays;
 import java.util.List;
 
-@SuppressWarnings("serial")
 public class ExplainerParameters implements Serializable {
 
+  private static final long serialVersionUID = 1L;
   private int numSamples = 5000;
   private int numFeatures = 0;
   private int numIterations = 10;
@@ -20,12 +20,12 @@ public class ExplainerParameters implements Serializable {
 
   // Classifier Parameters
   private String impurity = "gini";
-  private Integer maxDepth = 5;
-  private Integer maxBins = 32;
-  private Integer numClasses = 2;
-  private Integer numTrees = 10;
-  private Integer seed = 12345;
-  private Integer minPartitions = 4;
+  private int maxDepth = 5;
+  private int maxBins = 32;
+  private int numClasses = 2;
+  private int numTrees = 10;
+  private int seed = 12345;
+  private int minPartitions = 4;
   private String featureSubsetStrategy = "auto";
 
   public boolean isDiscretized() {
@@ -38,7 +38,7 @@ public class ExplainerParameters implements Serializable {
   }
 
   public int getNumSamples() {
-    return numSamples;
+    return this.numSamples;
   }
 
   public ExplainerParameters setNumSamples(int numSamples) {
@@ -47,7 +47,7 @@ public class ExplainerParameters implements Serializable {
   }
 
   public int[] getPercentileValues() {
-    return percentileValues;
+    return this.percentileValues;
   }
 
   public ExplainerParameters setPercentileValues(int[] percentileValues) {
@@ -64,7 +64,7 @@ public class ExplainerParameters implements Serializable {
   }
 
   public int getNumberOfFeatures() {
-    return numFeatures;
+    return this.numFeatures;
   }
 
   public ExplainerParameters setNumberOfIterations(int numIterations) throws Exception {
@@ -76,7 +76,7 @@ public class ExplainerParameters implements Serializable {
   }
 
   public int getNumberOfIterations() {
-    return numIterations;
+    return this.numIterations;
   }
 
   public ExplainerParameters setStepSize(double stepSize) throws Exception {
@@ -88,7 +88,7 @@ public class ExplainerParameters implements Serializable {
   }
 
   public double getStepSize() {
-    return stepSize;
+    return this.stepSize;
   }
 
   public ExplainerParameters setDelimiter(String delimiter) {
@@ -97,7 +97,7 @@ public class ExplainerParameters implements Serializable {
   }
 
   public String getDelimiter() {
-    return delimiter;
+    return this.delimiter;
   }
 
   public ExplainerParameters setCategoricalColumns(List<Integer> columns) {
@@ -115,11 +115,11 @@ public class ExplainerParameters implements Serializable {
   }
 
   public boolean isColumnNameSpecified() {
-    return columnNameSpecified;
+    return this.columnNameSpecified;
   }
 
   public String getDataPath() {
-    return dataPath;
+    return this.dataPath;
   }
 
   public ExplainerParameters setDataPath(String dataPath) throws Exception {
@@ -131,37 +131,32 @@ public class ExplainerParameters implements Serializable {
     return this;
   }
 
-  public Integer getNumTrees() {
-    return numTrees;
+  public int getNumTrees() {
+    return this.numTrees;
   }
 
-  public ExplainerParameters setNumTrees(Integer numTrees) throws Exception {
-    if (numTrees == null || numTrees < 0) {
+  public ExplainerParameters setNumTrees(int numTrees) throws Exception {
+    if (numTrees < 0) {
       throw new Exception(this.getClass()
-          + " : Trees count is either null or less than 0. Count should be greater than 0.");
+          + " : Trees count is less than 0. Count should be greater than 0.");
     } else {
       this.numTrees = numTrees;
     }
     return this;
   }
 
-  public Integer getSeed() {
-    return seed;
+  public int getSeed() {
+    return this.seed;
   }
 
-  public ExplainerParameters setSeed(Integer seed) throws Exception {
-    if (seed == null) {
-      throw new Exception(this.getClass() + " : Seed value cannot be null.");
-    } else {
-      this.seed = seed;
-    }
+  public ExplainerParameters setSeed(int seed) throws Exception {
+    this.seed = seed;
     return this;
   }
 
   public String getFeatureSubsetStrategy() {
-    return featureSubsetStrategy;
+    return this.featureSubsetStrategy;
   }
-
 
   public ExplainerParameters setFeatureSubsetStrategy(String featureSubsetStrategy)
       throws Exception {
@@ -178,7 +173,7 @@ public class ExplainerParameters implements Serializable {
   }
 
   public String getImpurity() {
-    return impurity;
+    return this.impurity;
   }
 
   public ExplainerParameters setImpurity(String impurity) throws Exception {
@@ -193,58 +188,56 @@ public class ExplainerParameters implements Serializable {
     return this;
   }
 
-  public Integer getMaxDepth() {
-
-    return maxDepth;
+  public int getMaxDepth() {
+    return this.maxDepth;
   }
 
-  public ExplainerParameters setMaxDepth(Integer maxDepth) throws Exception {
-    if (maxDepth == null || maxDepth < 0 || maxDepth > 30) {
-      throw new Exception(this.getClass()
-          + " : Depth is either null or not within the range. Depth range : 0-30.");
+  public ExplainerParameters setMaxDepth(int maxDepth) throws Exception {
+    if (maxDepth < 0 || maxDepth > 30) {
+      throw new Exception(this.getClass() + " : Depth is not within the range. Depth range : 0-30.");
     } else {
       this.maxDepth = maxDepth;
     }
     return this;
   }
 
-  public Integer getMaxBins() {
-    return maxBins;
+  public int getMaxBins() {
+    return this.maxBins;
   }
 
-  public ExplainerParameters setMaxBins(Integer maxBins) throws Exception {
-    if (maxBins == null || maxBins < 2) {
+  public ExplainerParameters setMaxBins(int maxBins) throws Exception {
+    if (maxBins < 2) {
       throw new Exception(this.getClass()
-          + " : Bins value is either null or less than 2. The value should be >= 2.");
+          + " : Bins value is less than 2. The value should be >= 2.");
     } else {
       this.maxBins = maxBins;
     }
     return this;
   }
 
-  public Integer getNumClasses() {
-    return numClasses;
+  public int getNumClasses() {
+    return this.numClasses;
   }
 
-  public ExplainerParameters setNumClasses(Integer numClasses) throws Exception {
-    if (numClasses == null || numClasses < 2) {
+  public ExplainerParameters setNumClasses(int numClasses) throws Exception {
+    if (numClasses < 2) {
       throw new Exception(this.getClass()
-          + " : Number of classes is either null or less than 2. Value should be >= 2.");
+          + " : Number of classes is less than 2. Value should be >= 2.");
     } else {
       this.numClasses = numClasses;
     }
     return this;
   }
 
-  public Integer getMinPartitions() {
+  public int getMinPartitions() {
 
-    return minPartitions;
+    return this.minPartitions;
   }
 
-  public ExplainerParameters setMinPartitions(Integer minPartitions) throws Exception {
-    if (minPartitions == null || minPartitions < 4) {
+  public ExplainerParameters setMinPartitions(int minPartitions) throws Exception {
+    if (minPartitions < 4) {
       throw new Exception(this.getClass()
-          + " : Minimum number of Partitions is either null or less than 4. Value should be >= 4");
+          + " : Minimum number of Partitions is less than 4. Value should be >= 4");
     } else {
       this.minPartitions = minPartitions;
     }
